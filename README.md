@@ -1,4 +1,4 @@
-# TakiLine - Bacterial Genome Assembly Pipeline v6.0.0
+# TakiLine - Bacterial Genome Assembly Pipeline v6.1.0
 
 A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumina paired-end, Nanopore, PacBio HiFi, or hybrid reads. Produces a polished, QC-evaluated assembly FASTA ready for downstream annotation and comparative genomics.
 
@@ -25,6 +25,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 - Six assembler choices: SPAdes, SKESA, Unicycler, Flye, Canu, Raven
 - Parallel QC: FastQC and NanoPlot run concurrently with trimming/filtering steps
 - Automatic `pigz` detection for faster compression
+- **Flye version auto-detection**: selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) at runtime
 - Checkpoint-based **resume** (`-r`) — skip completed stages after interruption
 - Plasmid detection via PlasmidFinder (optional, on by default)
 - Genome completeness assessment via CheckM2/CheckM and BUSCO
@@ -68,6 +69,8 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 | [Canu](https://github.com/marbl/canu) | Nanopore, HiFi | `conda install -c bioconda canu` |
 | [Raven](https://github.com/lbcb-sci/raven) | Nanopore, HiFi | `conda install -c bioconda raven-assembler` |
 
+> **Flye version note:** Flye ≥ 2.9 is recommended. The pipeline auto-detects the installed version and selects the appropriate Nanopore flag (`--nano-hq` for ≥ 2.9, `--nano-raw` for ≤ 2.8), but `--nano-hq` yields significantly better results with R10 chemistry reads.
+
 ### Optional (skipped gracefully if absent)
 
 | Tool | Purpose | Install |
@@ -88,13 +91,13 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 
 ```bash
 # Clone or download the script
-wget https://github.com/cruzolino/Updated-Bacterial-Genome-Assembly-Pipeline
-chmod +x bacterial_assembly_v6.0.0.sh
+wget https://your-repo/bacterial_assembly_v6.1.0.sh
+chmod +x bacterial_assembly_v6.1.0.sh
 
 # Recommended: create a dedicated conda environment
 conda create -n assembly \
     fastqc fastp quast bowtie2 samtools pilon \
-    filtlong spades unicycler flye \
+    filtlong spades unicycler "flye>=2.9" \
     multiqc nanoplot seqkit assembly-stats \
     checkm2 busco plasmidfinder pigz
 conda activate assembly
@@ -106,19 +109,19 @@ conda activate assembly
 
 ```bash
 # Illumina paired-end
-./bacterial_assembly_v6.0.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
+./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
 
 # Nanopore only
-./bacterial_assembly_v6.0.0.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
+./bacterial_assembly_v6.1.0.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
 
 # Hybrid (Illumina + Nanopore)
-./bacterial_assembly_v6.0.0.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
+./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
 
 # PacBio HiFi
-./bacterial_assembly_v6.0.0.sh -l hifi.fq.gz -s Pseudomonas -a flye --hifi -g 6.5m
+./bacterial_assembly_v6.1.0.sh -l hifi.fq.gz -s Pseudomonas -a flye --hifi -g 6.5m
 
 # Resume an interrupted run
-./bacterial_assembly_v6.0.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 ---
@@ -126,7 +129,7 @@ conda activate assembly
 ## Usage
 
 ```
-Usage:  bacterial_assembly_v6.0.0.sh [OPTIONS]
+Usage:  bacterial_assembly_v6.1.0.sh [OPTIONS]
 
 Input (at least one required):
   -1 FILE   Illumina forward reads (R1.fastq.gz)
@@ -159,7 +162,7 @@ General:
 | Illumina PE only | `spades` | `--isolate` mode; best for single isolates |
 | Illumina PE only | `skesa` | Faster than SPAdes; fewer mis-assemblies on some datasets |
 | Illumina + Nanopore | `unicycler` | Closes chromosomal and plasmid gaps using long reads |
-| Nanopore (standard) | `flye` | Robust for R9/R10 chemistry; uses `--nano-hq` |
+| Nanopore (R10, standard) | `flye` | Robust for R9/R10 chemistry; auto-selects `--nano-hq` or `--nano-raw` |
 | Nanopore (legacy R9.4) | `raven` | Lightweight alternative to Flye |
 | Nanopore (deep coverage) | `canu` | Higher accuracy at the cost of longer runtime |
 | PacBio HiFi | `flye --hifi` | `--pacbio-hifi` mode; produces near-perfect assemblies |
@@ -185,17 +188,19 @@ Input reads
 [1/4] Quality Control
     ├── Illumina: FastQC (raw, parallel) → fastp trimming → FastQC (trimmed) → MultiQC
     └── Long-read: NanoPlot (parallel) → Filtlong (20× coverage target)
+    │         └── Quality threshold: Q7 (Nanopore) | Q20 (PacBio HiFi)
     │
     ▼
 [2/4] Assembly
     ├── Illumina/Hybrid: SPAdes | SKESA | Unicycler
-    ├── Nanopore/HiFi:   Flye | Canu | Raven
+    ├── Nanopore/HiFi:   Flye (auto-versioned) | Canu | Raven
     └── Contig filtering (default: ≥ 500 bp)
     │
     ▼
 [3/4] Polishing
     ├── Illumina/Hybrid: Bowtie2 mapping → Pilon SNP+indel correction
     └── Long-read only:  skipped (Flye/Canu/Raven perform internal polishing)
+    │                    assembly path persisted for downstream stages
     │
     ▼
 [4/4] Quality Assessment
@@ -211,6 +216,10 @@ Final Report (SUMMARY.md)
 ### Key design decisions
 
 **Parallel QC** — FastQC on raw reads and NanoPlot are launched in the background while `fastp`/`filtlong` run in the foreground. This saves 30–120 s on typical datasets with no additional resource contention.
+
+**Flye version auto-detection** — the pipeline queries `flye --version` at runtime and selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) automatically, with a warning prompting the user to upgrade if an older version is detected.
+
+**Platform-aware long-read QC** — Filtlong applies `--min_mean_q 7` for Nanopore reads and `--min_mean_q 20` for PacBio HiFi reads, reflecting the distinct quality score distributions of each platform.
 
 **No external long-read polishing** — Flye, Canu, and Raven perform iterative internal polishing. A separate Medaka pass is redundant and a common source of pipeline crashes.
 
@@ -271,10 +280,10 @@ If the pipeline is interrupted (node failure, timeout, manual kill), re-run the 
 
 ```bash
 # Original command
-./bacterial_assembly_v6.0.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
+./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
 
 # Resume after interruption
-./bacterial_assembly_v6.0.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on successful completion. With `-r`, any stage whose sentinel exists is skipped entirely. To force a specific stage to re-run, delete its sentinel then resume:
@@ -282,7 +291,7 @@ Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on successful com
 ```bash
 # Force re-assembly only, keep QC results
 rm bacterial_assembly/logs/.done_assembly
-./bacterial_assembly_v6.0.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 ---
@@ -305,7 +314,15 @@ After the pipeline completes, the final polished assembly FASTA is ready for:
 
 ## Changelog
 
+### v6.1.0 (bug-fix release)
+
+- **BUG FIX (critical)** — Nanopore-only mode: `run_polishing()` now persists `.assembly_path` before `stage_done` even when the polishing step is skipped (long-read path). Previously, the QA and report stages received a stale assembly variable, causing them to silently not execute after a successful assembly.
+- **BUG FIX** — Flye version auto-detection: the pipeline now queries `flye --version` at runtime and selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) automatically. Previously, `--nano-hq` was hardcoded, breaking environments with Flye ≤ 2.8.
+- **BUG FIX** — Filtlong quality threshold: `--min_mean_q 20` is now used for PacBio HiFi reads instead of the Nanopore default of `7`. Using Q7 on HiFi reads provided no meaningful filtering.
+- **BUG FIX** — `TARGET_BASES` regex: the gigabase branch (`0.5g`) now performs its own independent `BASH_REMATCH` capture instead of relying on the prior megabase match, eliminating a silent wrong-value bug for genome sizes expressed in gigabases.
+
 ### v6.0.0
+
 - **Annotation removed** from pipeline scope; run Bakta/PGAP separately on the final FASTA
 - **Resume fix**: `TRIMMED_R1/R2` and `FILTERED_LONG` now derived via `_set_derived_paths()` — resume past QC no longer fails with undefined variable errors
 - **Parallel QC**: FastQC (raw) runs concurrently with `fastp`; NanoPlot runs concurrently with `filtlong`
@@ -317,6 +334,7 @@ After the pipeline completes, the final polished assembly FASTA is ready for:
 - `-d` / `BAKTA_DB` option and annotation directory scaffold removed
 
 ### v5.0.0
+
 - Medaka polishing removed (Flye/Raven/Canu handle internal consensus)
 - Prokka replaced by Bakta for annotation
 - Step counter reduced from 6 to 5
