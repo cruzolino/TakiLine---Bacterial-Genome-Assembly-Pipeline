@@ -94,7 +94,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 
 ```bash
 # Clone or download the script
-wget https://github.com/cruzolino/TakiLine-Updated-Bacterial-Genome-Assembly-Pipeline
+gitclone https://github.com/cruzolino/TakiLine---Bacterial-Genome-Assembly-Pipeline
 chmod +x bacterial_assembly_v6.1.0.sh
 
 # Recommended: create a dedicated conda environment
