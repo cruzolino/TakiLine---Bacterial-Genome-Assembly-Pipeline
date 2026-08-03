@@ -1,32 +1,41 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Bacterial Genome Assembly Pipeline — v6.1.0
+# Bacterial Genome Assembly Pipeline — v6.1.1
 # Modes: Illumina (PE) | Nanopore | Hybrid (Illumina + Nanopore) | PacBio HiFi
 #
-# Changes from v6.0.0 (bug-fix release):
-#   - BUG FIX (critical): Nanopore-only mode — run_polishing() now persists
-#     .assembly_path before stage_done even when polishing is skipped (long-read
-#     path). Previously, QA and report stages received an unset/stale ASSEMBLY
-#     variable, causing silent no-ops after assembly completed.
-#   - BUG FIX: Flye version auto-detection — selects --nano-hq (Flye ≥ 2.9) or
-#     --nano-raw (Flye ≤ 2.8) at runtime instead of hardcoding --nano-hq.
-#   - BUG FIX: filtlong quality threshold — uses --min_mean_q 20 for HiFi reads
-#     instead of the Nanopore default of 7.
-#   - BUG FIX: TARGET_BASES regex — second branch now uses its own BASH_REMATCH
-#     capture instead of relying on a prior match; eliminates silent wrong value
-#     when genome size is given in gigabases (e.g. 0.5g).
-#   - All v6.0.0 changes retained.
+# Changes from v6.1.0 (bug-fix release):
+#   - BUG FIX (critical): `set -o errtrace` added — the ERR trap previously
+#     never fired inside functions (i.e. during the entire pipeline), so
+#     failures exited silently with no "Pipeline failed at line X" message.
+#   - BUG FIX: Flye version detection no longer crashes the whole run when
+#     `grep -oP` is unavailable/fails (non-GNU grep, non-UTF8 locale); now
+#     uses portable `grep -E` under a forced C locale and never aborts the
+#     script on failure to detect a version.
+#   - BUG FIX: SUMMARY.md assembly-stats parsing — real assembly-stats output
+#     terminates numeric fields with a comma (e.g. "N50 = 4655090, n = 1"),
+#     which the old strict `^[0-9]+$` match never matched, silently picking up
+#     the wrong field. Total length was never populated at all because the
+#     regex looked for "sum_len"/"total_len" instead of the real "sum" field.
+#   - BUG FIX: genome-size validation regex tightened to reject malformed
+#     values (e.g. "4.8.2m"), which previously passed validation and silently
+#     corrupted the Filtlong TARGET_BASES calculation.
+#   - BUG FIX: hybrid-mode assembler validation — spades/skesa now hard-error
+#     in hybrid mode instead of silently discarding the long reads (they were
+#     QC'd but never assembled with); flye/canu/raven now warn that Illumina
+#     reads are used for Pilon polishing only, not integrated hybrid assembly.
+#   - Default output directory renamed from `bacterial_assembly` to `takiline`.
+#   - All v6.1.0 changes retained.
 # ==============================================================================
-set -euo pipefail
+set -Eeuo pipefail
 IFS=$'\n\t'
 
 # ── Version ────────────────────────────────────────────────────────────────────
-readonly VERSION="6.1.0"
+readonly VERSION="6.1.1"
 
 # ── Defaults ───────────────────────────────────────────────────────────────────
 THREADS=$(nproc --all 2>/dev/null || echo 8)
 MEMORY="32G"
-OUTDIR="bacterial_assembly"
+OUTDIR="takiline"
 ASSEMBLER="spades"
 READ_TYPE="illumina"
 MIN_CONTIG_LENGTH=500
@@ -207,16 +216,30 @@ validate_inputs() {
     case "${ASSEMBLER}" in
         spades|skesa|unicycler)
             [[ "${READ_TYPE}" == "long" ]] && \
-                err "${ASSEMBLER} cannot assemble long-reads only. Use flye, canu, or raven." ;;
+                err "${ASSEMBLER} cannot assemble long-reads only. Use flye, canu, or raven."
+            # spades/skesa never consume long reads: in hybrid mode they would
+            # be QC'd (and required as a dependency) but silently never used
+            # in assembly or polishing. Only unicycler performs true hybrid
+            # assembly, so block the misleading combination outright.
+            if [[ "${READ_TYPE}" == "hybrid" && "${ASSEMBLER}" != "unicycler" ]]; then
+                err "${ASSEMBLER} does not use long reads — the -l input would be silently discarded in hybrid mode. Use -a unicycler for hybrid assembly, or drop -l to run ${ASSEMBLER} on Illumina reads only."
+            fi
+            ;;
         flye|canu|raven)
             [[ "${READ_TYPE}" == "illumina" ]] && \
-                err "${ASSEMBLER} is a long-read assembler. For Illumina use spades, skesa, or unicycler." ;;
+                err "${ASSEMBLER} is a long-read assembler. For Illumina use spades, skesa, or unicycler."
+            # flye/canu/raven assemble only the long reads; in hybrid mode the
+            # Illumina reads are used later for Pilon polishing, not for an
+            # integrated hybrid assembly graph. Not an error, but worth flagging.
+            [[ "${READ_TYPE}" == "hybrid" ]] && \
+                warn "${ASSEMBLER} assembles only the long reads; Illumina reads will be used for post-assembly Pilon polishing, not integrated hybrid assembly. Use -a unicycler for true hybrid assembly."
+            ;;
         *) err "Unknown assembler: ${ASSEMBLER}" ;;
     esac
 
     [[ "${THREADS}" =~ ^[0-9]+$ ]] || err "Threads must be a positive integer."
     [[ "${MIN_CONTIG_LENGTH}" =~ ^[0-9]+$ ]] || err "Min contig length must be a positive integer."
-    [[ "${GENOME_SIZE,,}" =~ ^[0-9.]+[mg]$ ]] || \
+    [[ "${GENOME_SIZE,,}" =~ ^[0-9]+(\.[0-9]+)?[mg]$ ]] || \
         err "Genome size must be a number followed by m or g (e.g. 5m, 4.8m, 0.5g)."
 
     # ── Preflight tool checks (all at once) ───────────────────────────────────
@@ -313,9 +336,9 @@ run_qc() {
         # Each branch captures independently to avoid BASH_REMATCH bleed-over.
         local _gs="${GENOME_SIZE,,}"
         local TARGET_BASES
-        if [[ "${_gs}" =~ ^([0-9.]+)m$ ]]; then
+        if [[ "${_gs}" =~ ^([0-9]+(\.[0-9]+)?)m$ ]]; then
             TARGET_BASES=$(awk "BEGIN{printf \"%d\", ${BASH_REMATCH[1]} * 1000000 * 20}")
-        elif [[ "${_gs}" =~ ^([0-9.]+)g$ ]]; then
+        elif [[ "${_gs}" =~ ^([0-9]+(\.[0-9]+)?)g$ ]]; then
             TARGET_BASES=$(awk "BEGIN{printf \"%d\", ${BASH_REMATCH[1]} * 1000000000 * 20}")
         else
             err "Cannot parse genome size '${GENOME_SIZE}' for TARGET_BASES calculation."
@@ -411,8 +434,13 @@ run_assembly() {
             if ${HIFI_MODE}; then
                 flye_read_flag="--pacbio-hifi"
             else
-                local flye_version
-                flye_version=$(flye --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
+                # Use POSIX `grep -E` under a forced C locale (portable across
+                # GNU/BSD grep and locale configurations, unlike `grep -oP`,
+                # which errors out on non-GNU grep or non-UTF8 locales and
+                # previously crashed the whole run). Never let detection
+                # failure abort the script; fall back to the safe default.
+                local flye_version=""
+                flye_version=$(LC_ALL=C flye --version 2>&1 | grep -Eo '[0-9]+\.[0-9]+' | head -1) || true
                 if awk "BEGIN{exit !(${flye_version:-0} >= 2.9)}"; then
                     flye_read_flag="--nano-hq"
                 else
@@ -650,10 +678,14 @@ generate_report() {
         local _stats
         _stats=$(assembly-stats "${ASSEMBLY}" 2>/dev/null)
         # Field names vary by assembly-stats version; match the numeric value
-        # after the keyword on the same line.
-        total_len=$(awk '/sum[_ ]len|total[_ ]len/{for(i=1;i<=NF;i++) if($i~/^[0-9]+$/) {print $i; exit}}' <<< "${_stats}")
-        n50=$(      awk '/^N50/{for(i=1;i<=NF;i++) if($i~/^[0-9]+$/) {print $i; exit}}'         <<< "${_stats}")
-        largest=$(  awk '/largest/{for(i=1;i<=NF;i++) if($i~/^[0-9]+$/) {print $i; exit}}'      <<< "${_stats}")
+        # after the keyword on the same line. Real assembly-stats output
+        # terminates most numeric fields with a comma (e.g. "sum = 123, n = 1"),
+        # so strip a trailing comma before validating each field as numeric —
+        # otherwise the comma-suffixed value never matches and the loop picks
+        # up the next unrelated number on the line (e.g. n50 became "1").
+        total_len=$(awk '/^sum[ =]|sum[_ ]len|total[_ ]len/{for(i=1;i<=NF;i++){v=$i; gsub(/,$/,"",v); if(v~/^[0-9]+$/){print v; exit}}}' <<< "${_stats}")
+        n50=$(      awk '/^N50[ =]/{for(i=1;i<=NF;i++){v=$i; gsub(/,$/,"",v); if(v~/^[0-9]+$/){print v; exit}}}'         <<< "${_stats}")
+        largest=$(  awk '/largest/{for(i=1;i<=NF;i++){v=$i; gsub(/,$/,"",v); if(v~/^[0-9]+$/){print v; exit}}}'      <<< "${_stats}")
         total_len="${total_len:-N/A}"
         n50="${n50:-N/A}"
         largest="${largest:-N/A}"

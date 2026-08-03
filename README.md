@@ -1,4 +1,4 @@
-# TakiLine - Bacterial Genome Assembly Pipeline v6.1.0
+# TakiLine - Bacterial Genome Assembly Pipeline v6.1.1
 
 <img width="314" height="314" alt="Takiline" src="https://github.com/user-attachments/assets/0c909374-af2b-443a-ae72-6adaaeef48cc" />
 
@@ -94,8 +94,8 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 
 ```bash
 # Clone or download the script
-gitclone https://github.com/cruzolino/TakiLine---Bacterial-Genome-Assembly-Pipeline
-chmod +x bacterial_assembly_v6.1.0.sh
+git clone https://github.com/cruzolino/TakiLine---Bacterial-Genome-Assembly-Pipeline
+chmod +x bacterial_assembly_v6_1_0.sh
 
 # Recommended: create a dedicated conda environment
 conda create -n assembly \
@@ -112,19 +112,19 @@ conda activate assembly
 
 ```bash
 # Illumina paired-end
-./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
+./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
 
 # Nanopore only
-./bacterial_assembly_v6.1.0.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
+./bacterial_assembly_v6_1_0.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
 
 # Hybrid (Illumina + Nanopore)
-./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
+./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
 
 # PacBio HiFi
-./bacterial_assembly_v6.1.0.sh -l hifi.fq.gz -s Pseudomonas -a flye --hifi -g 6.5m
+./bacterial_assembly_v6_1_0.sh -l hifi.fq.gz -s Pseudomonas -a flye --hifi -g 6.5m
 
 # Resume an interrupted run
-./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 ---
@@ -132,7 +132,7 @@ conda activate assembly
 ## Usage
 
 ```
-Usage:  bacterial_assembly_v6.1.0.sh [OPTIONS]
+Usage:  bacterial_assembly_v6_1_0.sh [OPTIONS]
 
 Input (at least one required):
   -1 FILE   Illumina forward reads (R1.fastq.gz)
@@ -145,7 +145,7 @@ Assembly:
                        flye|canu|raven (long-read)        [default: spades]
 
 General:
-  -o DIR    Output directory          [default: bacterial_assembly]
+  -o DIR    Output directory          [default: takiline]
   -t INT    Threads                   [default: auto-detect]
   -m STR    Memory limit              [default: 32G]
   -s STR    Sample name               [default: isolate]
@@ -169,6 +169,8 @@ General:
 | Nanopore (legacy R9.4) | `raven` | Lightweight alternative to Flye |
 | Nanopore (deep coverage) | `canu` | Higher accuracy at the cost of longer runtime |
 | PacBio HiFi | `flye --hifi` | `--pacbio-hifi` mode; produces near-perfect assemblies |
+
+> **Hybrid mode (`-1`/`-2` + `-l`) note:** only `-a unicycler` performs true integrated hybrid assembly (long reads close gaps in the assembly graph). `-a flye`/`canu`/`raven` in hybrid mode assemble the long reads only and use the Illumina reads for post-assembly Pilon polishing — a valid but different strategy. `-a spades`/`skesa` cannot use long reads at all and are rejected in hybrid mode to avoid silently discarding the `-l` input.
 
 ### Genome size format
 
@@ -235,7 +237,7 @@ Final Report (SUMMARY.md)
 ## Output Structure
 
 ```
-bacterial_assembly/
+takiline/
 ├── 00_raw_data/                      # Symlinks to input reads (no copy)
 ├── 01_qc/
 │   ├── {sample}_R1.trimmed.fastq.gz
@@ -283,18 +285,18 @@ If the pipeline is interrupted (node failure, timeout, manual kill), re-run the 
 
 ```bash
 # Original command
-./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
+./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
 
 # Resume after interruption
-./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on successful completion. With `-r`, any stage whose sentinel exists is skipped entirely. To force a specific stage to re-run, delete its sentinel then resume:
 
 ```bash
 # Force re-assembly only, keep QC results
-rm bacterial_assembly/logs/.done_assembly
-./bacterial_assembly_v6.1.0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+rm takiline/logs/.done_assembly
+./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 ---
@@ -316,6 +318,16 @@ After the pipeline completes, the final polished assembly FASTA is ready for:
 ---
 
 ## Changelog
+
+### v6.1.1 (bug-fix release)
+
+- **BUG FIX (critical)** — `set -o errtrace` added. The `ERR` trap previously never fired for failures inside shell functions, which is where the entire pipeline runs; any tool crash (SPAdes OOM, Pilon failure, etc.) exited the script silently with no "Pipeline failed at line X. Check logs in ..." message.
+- **BUG FIX** — Flye version detection (`grep -oP`) no longer crashes the whole run when the pattern match fails (non-GNU/BSD grep, non-UTF8 locale). Now uses portable `grep -E` under a forced `C` locale and never aborts the script if version detection fails; falls back to the safe `--nano-raw` default as originally intended.
+- **BUG FIX** — `SUMMARY.md` assembly-stats parsing. Real `assembly-stats` output terminates numeric fields with a comma (e.g. `N50 = 4655090, n = 1`), which the previous strict `^[0-9]+$` match never matched — it silently picked up the next unrelated number on the line instead (N50 was reported as `1`). Total length was never populated at all because the regex searched for `sum_len`/`total_len` instead of the tool's actual `sum` field. Both fields are now parsed correctly.
+- **BUG FIX** — Genome-size validation tightened to `^[0-9]+(\.[0-9]+)?[mg]$`, rejecting malformed values such as `4.8.2m`. Previously such values passed validation and silently corrupted the Filtlong `TARGET_BASES` calculation (e.g. `4.8.2m` produced a target of 4 bases instead of ~96,000,000).
+- **BUG FIX** — Hybrid-mode assembler validation. `-a spades`/`-a skesa` in hybrid mode now hard-error instead of silently discarding the long reads (they were QC'd via NanoPlot/Filtlong but never actually used in assembly or polishing). `-a flye`/`-a canu`/`-a raven` in hybrid mode now emit a warning clarifying that Illumina reads are used for post-assembly Pilon polishing only, not an integrated hybrid assembly graph — only `-a unicycler` performs true hybrid assembly.
+- **Default output directory** renamed from `bacterial_assembly` to `takiline`.
+- Fixed `gitclone` → `git clone` typo and script filename mismatch (`v6.1.0.sh` → `v6_1_0.sh`) in Installation/Usage examples.
 
 ### v6.1.0 (bug-fix release)
 
