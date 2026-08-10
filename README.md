@@ -1,4 +1,4 @@
-# TakiLine - Bacterial Genome Assembly Pipeline v6.1.1
+# TakiLine - Bacterial Genome Assembly Pipeline
 
 <img width="314" height="314" alt="Takiline" src="https://github.com/user-attachments/assets/0c909374-af2b-443a-ae72-6adaaeef48cc" />
 
@@ -18,7 +18,6 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 - [Output Structure](#output-structure)
 - [Resume Mode](#resume-mode)
 - [Suggested Next Steps](#suggested-next-steps)
-- [Changelog](#changelog)
 
 ---
 
@@ -95,15 +94,15 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 ```bash
 # Clone or download the script
 git clone https://github.com/cruzolino/TakiLine---Bacterial-Genome-Assembly-Pipeline
-chmod +x bacterial_assembly_v6_1_0.sh
+chmod +x takiline.sh
 
 # Recommended: create a dedicated conda environment
-conda create -n assembly \
+conda create -n takiline \
     fastqc fastp quast bowtie2 samtools pilon \
     filtlong spades unicycler "flye>=2.9" \
     multiqc nanoplot seqkit assembly-stats \
     checkm2 busco plasmidfinder pigz
-conda activate assembly
+conda activate takiline
 ```
 
 ---
@@ -112,19 +111,19 @@ conda activate assembly
 
 ```bash
 # Illumina paired-end
-./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
+./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
 
 # Nanopore only
-./bacterial_assembly_v6_1_0.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
+./takiline.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
 
 # Hybrid (Illumina + Nanopore)
-./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
+./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
 
 # PacBio HiFi
-./bacterial_assembly_v6_1_0.sh -l hifi.fq.gz -s Pseudomonas -a flye --hifi -g 6.5m
+./takiline.sh -l hifi.fq.gz -s Pseudomonas -a flye --hifi -g 6.5m
 
 # Resume an interrupted run
-./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 ---
@@ -132,7 +131,7 @@ conda activate assembly
 ## Usage
 
 ```
-Usage:  bacterial_assembly_v6_1_0.sh [OPTIONS]
+Usage:  takiline.sh [OPTIONS]
 
 Input (at least one required):
   -1 FILE   Illumina forward reads (R1.fastq.gz)
@@ -152,9 +151,11 @@ General:
   -g STR    Expected genome size      [default: 5m]
   -c INT    Min contig length (bp)    [default: 500]
   -P STR    PlasmidFinder DB          [default: enterobacteriaceae]
+  -D DIR    PlasmidFinder DB path     [default: auto-detect]
   -x        Skip plasmid detection
   -q        QC only (skip assembly)
   -r        Resume from last checkpoint
+  -k        Keep intermediates (skip automatic cleanup)
   -h        Show help
 ```
 
@@ -236,24 +237,15 @@ Final Report (SUMMARY.md)
 
 ## Output Structure
 
+By default, once the full pipeline (not `-q`) completes, heavy intermediates are cleaned up automatically — `00_raw_data/`, the trimmed/filtered FASTQs, and the whole `02_assembly/`/`03_polishing/` working directories are removed, leaving only the reports, logs, and the final assembly:
+
 ```
 takiline/
-├── 00_raw_data/                      # Symlinks to input reads (no copy)
+├── final_assembly.fasta              # The final genome — moved here by cleanup
 ├── 01_qc/
-│   ├── {sample}_R1.trimmed.fastq.gz
-│   ├── {sample}_R2.trimmed.fastq.gz
-│   ├── {sample}_filtered.fastq.gz   # Long-read only
-│   ├── {sample}_fastp.html
-│   ├── nanoplot/                     # Long-read only
+│   ├── {sample}_fastp.html           # QC reports only; trimmed/filtered
+│   ├── nanoplot/                     # FASTQs are removed after assembly
 │   └── post_trim/
-├── 02_assembly/
-│   └── {assembler}/
-│       ├── contigs.fasta             # Raw assembler output
-│       └── contigs_filtered.fasta    # Length-filtered final assembly
-├── 03_polishing/
-│   ├── {sample}_pilon.fasta          # Illumina/hybrid only
-│   ├── mapped.bam
-│   └── {sample}_pilon.vcf
 ├── 05_reports/
 │   ├── SUMMARY.md                    # Human-readable pipeline report
 │   ├── quast/
@@ -261,19 +253,18 @@ takiline/
 │   ├── busco/
 │   └── plasmidfinder/
 └── logs/
-    ├── .assembly_path                # Used by resume logic
-    ├── .done_qc                      # Stage sentinel files
-    ├── .done_assembly
-    ├── .done_polishing
-    ├── .done_qa
-    ├── fastp.log
-    ├── fastqc_raw.log
-    ├── fastqc_post.log
+    ├── .assembly_path                # Points at final_assembly.fasta
+    ├── .done_qa                      # qc/assembly/polishing sentinels are
+    ├── fastp.log                     # removed along with their outputs, so
+    ├── fastqc_raw.log                # a later -r resume redoes those stages
+    ├── fastqc_post.log               # from the original input files
     ├── {assembler}.log
     ├── bowtie2.log
     ├── pilon.log
     └── quast.log
 ```
+
+Pass **`-k`** to keep intermediates instead (raw-data symlinks, trimmed/filtered FASTQs, `02_assembly/{assembler}/` working directories, `03_polishing/` BAMs) — useful for debugging an assembly. With `-k`, the final assembly stays at its normal per-assembler path (e.g. `02_assembly/{assembler}/contigs_filtered.fasta`, or `03_polishing/{sample}_pilon.fasta` for Illumina/hybrid) instead of being moved to `final_assembly.fasta`.
 
 The **final assembly FASTA** path is printed at completion and recorded in `05_reports/SUMMARY.md`.
 
@@ -285,10 +276,10 @@ If the pipeline is interrupted (node failure, timeout, manual kill), re-run the 
 
 ```bash
 # Original command
-./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
+./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16
 
 # Resume after interruption
-./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on successful completion. With `-r`, any stage whose sentinel exists is skipped entirely. To force a specific stage to re-run, delete its sentinel then resume:
@@ -296,7 +287,7 @@ Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on successful com
 ```bash
 # Force re-assembly only, keep QC results
 rm takiline/logs/.done_assembly
-./bacterial_assembly_v6_1_0.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
+./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
 ---
@@ -314,47 +305,3 @@ After the pipeline completes, the final polished assembly FASTA is ready for:
 | Phylogenetics | [IQ-TREE2](http://www.iqtree.org/) or [FastTree](http://www.microbesonline.org/fasttree/) |
 | Pan-genome | [Panaroo](https://github.com/gtonkinhill/panaroo) (preferred) or [Roary](https://sanger-pathogens.github.io/Roary/) |
 | Secondary metabolites | [antiSMASH](https://antismash.secondarymetabolites.org/) |
-
----
-
-## Changelog
-
-### v6.1.1 (bug-fix release)
-
-- **BUG FIX (critical)** — `set -o errtrace` added. The `ERR` trap previously never fired for failures inside shell functions, which is where the entire pipeline runs; any tool crash (SPAdes OOM, Pilon failure, etc.) exited the script silently with no "Pipeline failed at line X. Check logs in ..." message.
-- **BUG FIX** — Flye version detection (`grep -oP`) no longer crashes the whole run when the pattern match fails (non-GNU/BSD grep, non-UTF8 locale). Now uses portable `grep -E` under a forced `C` locale and never aborts the script if version detection fails; falls back to the safe `--nano-raw` default as originally intended.
-- **BUG FIX** — `SUMMARY.md` assembly-stats parsing. Real `assembly-stats` output terminates numeric fields with a comma (e.g. `N50 = 4655090, n = 1`), which the previous strict `^[0-9]+$` match never matched — it silently picked up the next unrelated number on the line instead (N50 was reported as `1`). Total length was never populated at all because the regex searched for `sum_len`/`total_len` instead of the tool's actual `sum` field. Both fields are now parsed correctly.
-- **BUG FIX** — Genome-size validation tightened to `^[0-9]+(\.[0-9]+)?[mg]$`, rejecting malformed values such as `4.8.2m`. Previously such values passed validation and silently corrupted the Filtlong `TARGET_BASES` calculation (e.g. `4.8.2m` produced a target of 4 bases instead of ~96,000,000).
-- **BUG FIX** — Hybrid-mode assembler validation. `-a spades`/`-a skesa` in hybrid mode now hard-error instead of silently discarding the long reads (they were QC'd via NanoPlot/Filtlong but never actually used in assembly or polishing). `-a flye`/`-a canu`/`-a raven` in hybrid mode now emit a warning clarifying that Illumina reads are used for post-assembly Pilon polishing only, not an integrated hybrid assembly graph — only `-a unicycler` performs true hybrid assembly.
-- **Default output directory** renamed from `bacterial_assembly` to `takiline`.
-- Fixed `gitclone` → `git clone` typo and script filename mismatch (`v6.1.0.sh` → `v6_1_0.sh`) in Installation/Usage examples.
-
-### v6.1.0 (bug-fix release)
-
-- **BUG FIX (critical)** — Nanopore-only mode: `run_polishing()` now persists `.assembly_path` before `stage_done` even when the polishing step is skipped (long-read path). Previously, the QA and report stages received a stale assembly variable, causing them to silently not execute after a successful assembly.
-- **BUG FIX** — Flye version auto-detection: the pipeline now queries `flye --version` at runtime and selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) automatically. Previously, `--nano-hq` was hardcoded, breaking environments with Flye ≤ 2.8.
-- **BUG FIX** — Filtlong quality threshold: `--min_mean_q 20` is now used for PacBio HiFi reads instead of the Nanopore default of `7`. Using Q7 on HiFi reads provided no meaningful filtering.
-- **BUG FIX** — `TARGET_BASES` regex: the gigabase branch (`0.5g`) now performs its own independent `BASH_REMATCH` capture instead of relying on the prior megabase match, eliminating a silent wrong-value bug for genome sizes expressed in gigabases.
-
-### v6.0.0
-
-- **Annotation removed** from pipeline scope; run Bakta/PGAP separately on the final FASTA
-- **Resume fix**: `TRIMMED_R1/R2` and `FILTERED_LONG` now derived via `_set_derived_paths()` — resume past QC no longer fails with undefined variable errors
-- **Parallel QC**: FastQC (raw) runs concurrently with `fastp`; NanoPlot runs concurrently with `filtlong`
-- **pigz support**: parallel gzip used automatically when `pigz` is installed
-- **Step counter**: updated to `[1/4]`–`[4/4]` reflecting four compute stages
-- **multiqc**: `--no-megaqc-update` added to suppress phone-home on air-gapped clusters
-- **assembly-stats parsing**: awk pattern made robust across output format variants
-- Redundant `ASSEMBLY` path override removed from polishing resume block
-- `-d` / `BAKTA_DB` option and annotation directory scaffold removed
-
-### v5.0.0
-
-- Medaka polishing removed (Flye/Raven/Canu handle internal consensus)
-- Prokka replaced by Bakta for annotation
-- Step counter reduced from 6 to 5
-- `awk` used for float math in coverage calculation (replaces `bc`)
-- `gzip -1` used for filtlong output pipe (speed over compression ratio)
-- Awk contig-filtering bug fixed (final record previously dropped)
-- Post-trim FastQC log separated from raw FastQC log
-- `seqkit` used as preferred contig length filter with awk fallback
