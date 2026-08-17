@@ -24,7 +24,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 ## Features
 
 - Four sequencing modes: **Illumina PE**, **Nanopore**, **PacBio HiFi**, **Hybrid**
-- Six assembler choices: SPAdes, SKESA, Unicycler, Flye, Canu, Raven
+- Seven assembler choices: SPAdes, SKESA, Unicycler, Flye, Canu, Raven, Trycycler
 - Parallel QC: FastQC and NanoPlot run concurrently with trimming/filtering steps
 - Automatic `pigz` detection for faster compression
 - **Flye version auto-detection**: selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) at runtime
@@ -59,6 +59,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 | Tool | Purpose | Install |
 |---|---|---|
 | [Filtlong](https://github.com/rrwick/Filtlong) | Long-read quality filtering | `conda install -c bioconda filtlong` |
+| [Medaka](https://github.com/nanoporetech/medaka) | Nanopore-only consensus polishing (required for Nanopore mode; not used for PacBio HiFi) | `conda install -c bioconda medaka` |
 
 ### Assemblers (install only the one you need)
 
@@ -70,6 +71,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 | [Flye](https://github.com/mikolmogorov/Flye) | Nanopore, HiFi | `conda install -c bioconda flye` |
 | [Canu](https://github.com/marbl/canu) | Nanopore, HiFi | `conda install -c bioconda canu` |
 | [Raven](https://github.com/lbcb-sci/raven) | Nanopore, HiFi | `conda install -c bioconda raven-assembler` |
+| [Trycycler](https://github.com/rrwick/Trycycler) | Nanopore, HiFi | `conda install -c bioconda trycycler flye raven-assembler miniasm minipolish minimap2` — assembles each of its 12 subsamples with the latter four in rotation, so all are required even though only `-a trycycler` is passed |
 
 > **Flye version note:** Flye ≥ 2.9 is recommended. The pipeline auto-detects the installed version and selects the appropriate Nanopore flag (`--nano-hq` for ≥ 2.9, `--nano-raw` for ≤ 2.8), but `--nano-hq` yields significantly better results with R10 chemistry reads.
 
@@ -116,6 +118,9 @@ conda activate takiline
 # Nanopore only
 ./takiline.sh -l ont.fq.gz -s Salmonella -a flye -g 4.8m -t 16
 
+# Nanopore, high-confidence (needs ≥100x reads)
+./takiline.sh -l ont.fq.gz -s Salmonella -a trycycler -g 4.8m -t 16
+
 # Hybrid (Illumina + Nanopore)
 ./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -l ont.fq.gz -s Klebsiella -a unicycler
 
@@ -141,7 +146,7 @@ Input (at least one required):
 
 Assembly:
   -a STR    Assembler: spades|skesa|unicycler (Illumina/hybrid)
-                       flye|canu|raven (long-read)        [default: spades]
+                       flye|canu|raven|trycycler (long-read) [default: spades]
 
 General:
   -o DIR    Output directory          [default: takiline]
@@ -152,6 +157,7 @@ General:
   -c INT    Min contig length (bp)    [default: 500]
   -P STR    PlasmidFinder DB          [default: enterobacteriaceae]
   -D DIR    PlasmidFinder DB path     [default: auto-detect]
+  -M STR    Medaka model (Nanopore)   [default: auto-select via --bacteria]
   -x        Skip plasmid detection
   -q        QC only (skip assembly)
   -r        Resume from last checkpoint
@@ -169,6 +175,7 @@ General:
 | Nanopore (R10, standard) | `flye` | Robust for R9/R10 chemistry; auto-selects `--nano-hq` or `--nano-raw` |
 | Nanopore (legacy R9.4) | `raven` | Lightweight alternative to Flye |
 | Nanopore (deep coverage) | `canu` | Higher accuracy at the cost of longer runtime |
+| Nanopore (≥100x, reliability-critical) | `trycycler` | Cross-validates 12 subsample assemblies to catch single-assembler misassembly. ~6-7x slower than `flye` for only marginal accuracy gain on well-behaved data — use it for the safety net, not for speed |
 | PacBio HiFi | `flye --hifi` | `--pacbio-hifi` mode; produces near-perfect assemblies |
 
 > **Hybrid mode (`-1`/`-2` + `-l`) note:** only `-a unicycler` performs true integrated hybrid assembly (long reads close gaps in the assembly graph). `-a flye`/`canu`/`raven` in hybrid mode assemble the long reads only and use the Illumina reads for post-assembly Pilon polishing — a valid but different strategy. `-a spades`/`skesa` cannot use long reads at all and are rejected in hybrid mode to avoid silently discarding the `-l` input.
@@ -200,12 +207,16 @@ Input reads
 [2/4] Assembly
     ├── Illumina/Hybrid: SPAdes | SKESA | Unicycler
     ├── Nanopore/HiFi:   Flye (auto-versioned) | Canu | Raven
+    │                    | Trycycler (12-subsample consensus: Flye/Miniasm+
+    │                      Minipolish/Raven rotated → cluster → auto-drop
+    │                      clusters that fail reconcile → MSA → consensus)
     └── Contig filtering (default: ≥ 500 bp)
     │
     ▼
 [3/4] Polishing
     ├── Illumina/Hybrid: Bowtie2 mapping → Pilon SNP+indel correction
-    └── Long-read only:  skipped (Flye/Canu/Raven perform internal polishing)
+    ├── Nanopore:        Medaka consensus polishing (--bacteria model selection)
+    └── PacBio HiFi:     skipped (Flye/Canu/Raven/Trycycler perform internal polishing)
     │                    assembly path persisted for downstream stages
     │
     ▼
@@ -227,7 +238,9 @@ Final Report (SUMMARY.md)
 
 **Platform-aware long-read QC** — Filtlong applies `--min_mean_q 7` for Nanopore reads and `--min_mean_q 20` for PacBio HiFi reads, reflecting the distinct quality score distributions of each platform.
 
-**No external long-read polishing** — Flye, Canu, and Raven perform iterative internal polishing. A separate Medaka pass is redundant and a common source of pipeline crashes.
+**Medaka polishing for Nanopore** — Flye/Canu/Raven/Trycycler's internal consensus is a good draft but still leaves ONT-specific indel error; a single Medaka pass measurably improves gene completeness. Model selection defaults to `--bacteria` auto-detection, which requires basecaller metadata in the read headers (absent from most SRA/ENA-archived data) — use `-M` to pass an explicit model when auto-detection fails. PacBio HiFi assemblies skip this step — HiFi consensus is already near-perfect and Medaka's models are ONT-tuned.
+
+**Trycycler auto-pruning** — since the pipeline runs non-interactively, a cluster that fails reconcile (e.g. an incomplete subsample assembly, a contig that won't circularise) has the offending contig dropped automatically and reconcile is retried, rather than waiting for the manual review Trycycler's own docs expect.
 
 **Pilon memory guard** — the pipeline checks available RAM before running Pilon and warns if the `-m` limit exceeds free memory, rather than silently crashing mid-run.
 
