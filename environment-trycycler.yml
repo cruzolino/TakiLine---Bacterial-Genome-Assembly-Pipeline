@@ -1,0 +1,35 @@
+# TakiLine — Trycycler assembly (`-a trycycler`) env
+#
+# Unlike medaka, this one is NOT a clean split. TakiLine's trycycler assembly
+# path (run_assembly()'s trycycler case) calls trycycler, flye, minimap2,
+# miniasm, minipolish, AND raven all within one continuous takiline.sh
+# invocation — every one of these must be on $PATH simultaneously for
+# `-a trycycler` to run at all. That's a real constraint of the current
+# script, not a hypothetical.
+#
+# The versions below are NOT proven to co-install. trycycler/minipolish were
+# found on this machine in their own env (test_trycycler: Python 3.13,
+# numpy 2.5.2), separate from flye/raven-assembler/miniasm/minimap2, which
+# are only proven working together in takiline_test (Python 3.12,
+# numpy 1.26.4). That numpy 1.x-vs-2.x split is a common bioconda
+# solver-conflict signature — this file bundles both sides back together as
+# a best-effort pin, but whether `conda env create` below actually solves,
+# and whether the result is correct, has not been tested.
+#
+# If this fails to solve (or solves but misbehaves), `-a trycycler` may need
+# its dependencies loosened/re-resolved rather than pinned as-is — treat
+# this file as a starting point for that investigation, not a known-good
+# environment.
+#
+# To create: conda env create -f environment-trycycler.yml
+name: takiline-trycycler
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - trycycler=0.5.6
+  - minipolish=0.2.1
+  - flye=2.9.6
+  - raven-assembler=1.8.3
+  - miniasm=0.3
+  - minimap2=2.31
