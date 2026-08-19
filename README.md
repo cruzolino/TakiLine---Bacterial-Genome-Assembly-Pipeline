@@ -25,15 +25,15 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 
 - Four sequencing modes: **Illumina PE**, **Nanopore**, **PacBio HiFi**, **Hybrid**
 - Seven assembler choices: SPAdes, SKESA, Unicycler, Flye, Canu, Raven, Trycycler
-- Parallel QC: FastQC and NanoPlot run concurrently with trimming/filtering steps
+- Parallel QC: FastQC and NanoPlot run alongside trimming/filtering
 - Automatic `pigz` detection for faster compression
-- **Flye version auto-detection**: selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) at runtime
-- Checkpoint-based **resume** (`-r`) — skip completed stages after interruption
-- **Species identification**: inform it with `-S "Genus species"` (recommended), or Kraken2 auto-detects it from reads — see [Species identification](#species-identification)
-- Optional typing/resistance analyses, off by default: PlasmidFinder (`--plasmid`), AMRFinderPlus (`--amr`), abricate (`--abricate`), mlst (`--mlst`) — see [Optional typing/resistance analyses](#optional-typingresistance-analyses-off-by-default)
-- Genome completeness assessment via CheckM2/CheckM and BUSCO
-- Summary report generated at completion, as both Markdown and standalone HTML
-- All missing tools reported at startup in a single error — no fix-one-run-find-next cycle
+- Flye version auto-detection: `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (≤ 2.8)
+- Checkpoint-based resume (`-r`) — skip completed stages after interruption
+- Species identification: `-S "Genus species"` (recommended), or Kraken2 auto-detects — see [Species identification](#species-identification)
+- Optional typing/resistance analyses, off by default: PlasmidFinder (`--plasmid`), AMRFinderPlus (`--amr`), abricate (`--abricate`), mlst (`--mlst`)
+- Genome completeness via CheckM2/CheckM and BUSCO
+- Summary report at completion, as Markdown and standalone HTML
+- All missing tools reported at startup in one error
 
 ---
 
@@ -51,9 +51,9 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 
 | Tool | Purpose | Install |
 |---|---|---|
-| [Kraken2](https://github.com/DerrickWood/kraken2) | Auto-detects species from reads when `-S` isn't passed, and needs `-K <db_dir>` (or `$KRAKEN2_DB_PATH`) pointing at a Kraken2 database | `conda install -c bioconda kraken2` |
+| [Kraken2](https://github.com/DerrickWood/kraken2) | Auto-detects species when `-S` isn't passed; needs `-K <db_dir>` (or `$KRAKEN2_DB_PATH`) | `conda install -c bioconda kraken2` |
 
-> Pass `-S "Escherichia coli"` if you already know the species — more accurate than auto-detection, and skips Kraken2 entirely. See [Species identification](#species-identification).
+> Pass `-S "Escherichia coli"` if known — more accurate, and skips Kraken2 entirely.
 
 ### Illumina / Hybrid
 
@@ -68,7 +68,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 | Tool | Purpose | Install |
 |---|---|---|
 | [Filtlong](https://github.com/rrwick/Filtlong) | Long-read quality filtering | `conda install -c bioconda filtlong` |
-| [Medaka](https://github.com/nanoporetech/medaka) | Nanopore-only consensus polishing (required for Nanopore mode; not used for PacBio HiFi) | `conda install -c bioconda medaka` |
+| [Medaka](https://github.com/nanoporetech/medaka) | Nanopore consensus polishing (not used for HiFi) | `conda install -c bioconda medaka` |
 
 ### Assemblers (install only the one you need)
 
@@ -80,9 +80,9 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 | [Flye](https://github.com/mikolmogorov/Flye) | Nanopore, HiFi | `conda install -c bioconda flye` |
 | [Canu](https://github.com/marbl/canu) | Nanopore, HiFi | `conda install -c bioconda canu` |
 | [Raven](https://github.com/lbcb-sci/raven) | Nanopore, HiFi | `conda install -c bioconda raven-assembler` |
-| [Trycycler](https://github.com/rrwick/Trycycler) | Nanopore, HiFi | `conda install -c bioconda trycycler flye raven-assembler miniasm minipolish minimap2` — assembles each of its 12 subsamples with the latter four in rotation, so all are required even though only `-a trycycler` is passed |
+| [Trycycler](https://github.com/rrwick/Trycycler) | Nanopore, HiFi | `conda install -c bioconda trycycler flye raven-assembler miniasm minipolish minimap2` — assembles 12 subsamples using the latter four in rotation, so all are required even though only `-a trycycler` is passed |
 
-> **Flye version note:** Flye ≥ 2.9 is recommended. The pipeline auto-detects the installed version and selects the appropriate Nanopore flag (`--nano-hq` for ≥ 2.9, `--nano-raw` for ≤ 2.8), but `--nano-hq` yields significantly better results with R10 chemistry reads.
+> **Flye:** ≥ 2.9 recommended. The pipeline auto-detects the version and picks `--nano-hq` or `--nano-raw`, but `--nano-hq` gives notably better results on R10 chemistry.
 
 ### Optional (skipped gracefully if absent)
 
@@ -92,52 +92,67 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 | [NanoPlot](https://github.com/wdecoster/NanoPlot) | Long-read QC plots | `conda install -c bioconda nanoplot` |
 | [seqkit](https://bioinf.shenwei.me/seqkit/) | Fast contig length filtering | `conda install -c bioconda seqkit` |
 | [assembly-stats](https://github.com/sanger-pathogens/assembly-stats) | N50/total length stats | `conda install -c bioconda assembly-stats` |
-| [CheckM2](https://github.com/chklovski/CheckM2) | Genome completeness (preferred) | `conda install -c bioconda checkm2` |
+| [CheckM2](https://github.com/chklovski/CheckM2) | Genome completeness (preferred) | Own env — see note below |
 | [CheckM](https://ecogenomics.github.io/CheckM/) | Genome completeness (legacy) | `conda install -c bioconda checkm` |
-| [BUSCO](https://busco.ezlab.org/) | Genome completeness (lineage, auto-selected via `--auto-lineage-prok`; override with `-L`) | `conda install -c bioconda busco` |
-| [pigz](https://zlib.net/pigz/) | Parallel gzip (faster compression) | `conda install pigz` |
+| [BUSCO](https://busco.ezlab.org/) | Completeness (lineage, auto via `--auto-lineage-prok`; override with `-L`) | Own env — see note below |
+| [pigz](https://zlib.net/pigz/) | Parallel gzip | `conda install pigz` |
 
 ### Optional typing/resistance analyses (off by default)
 
-Not best-effort like the table above: pass the flag and the tool becomes a hard requirement (fails fast at preflight, like a mandatory tool). Nothing here runs unless asked.
+Passing the flag makes that tool a hard requirement at preflight, like a mandatory tool. Nothing here runs unless asked.
 
 | Tool | Flag | Purpose | Install |
 |---|---|---|---|
 | [PlasmidFinder](https://cge.food.dtu.dk/services/PlasmidFinder/) | `--plasmid` | Plasmid replicon typing | `conda install -c bioconda plasmidfinder` |
-| [AMRFinderPlus](https://github.com/ncbi/amr) | `--amr` | AMR genes + point mutations (`--plus` stress/virulence panel) | `conda install -c bioconda ncbi-amrfinderplus` |
+| [AMRFinderPlus](https://github.com/ncbi/amr) | `--amr` | AMR genes + point mutations (`--plus` panel) | `conda install -c bioconda ncbi-amrfinderplus` |
 | [abricate](https://github.com/tseemann/abricate) | `--abricate` | Secondary AMR screen, db `card` | `conda install -c bioconda abricate` |
 | [mlst](https://github.com/tseemann/mlst) | `--mlst` | Sequence typing against PubMLST schemes | `conda install -c bioconda mlst` |
 
-> **Why `card`, not abricate's own default `ncbi`:** `ncbi` mirrors AMRFinderPlus's own data — pairing it with `--amr` would just run the same database twice. CARD is independently curated, so the two flags give genuinely different results worth comparing. To use a different db instead, edit `ABRICATE_DB` near the top of `takiline.sh` (no CLI flag for this yet).
+> **Why `card`, not abricate's default `ncbi`:** `ncbi` mirrors AMRFinderPlus's data, so pairing it with `--amr` would just duplicate results. CARD is independently curated. To use a different db, edit `ABRICATE_DB` near the top of `takiline.sh`.
+
+> **kraken2 and skesa** install cleanly into `environment.yml`'s env if needed: `conda install -n takiline -c bioconda kraken2=2.17.1` (one package at a time).
+>
+> **CheckM2 and BUSCO need their own env each** — both conflict with `samtools=1.24`'s dependencies:
+> ```bash
+> conda create -n takiline-checkm2 -c bioconda checkm2=1.1.0
+> conda run -n takiline-checkm2 checkm2 database --download   # ~1.7GB
+> conda create -n takiline-busco -c bioconda busco=6.1.0
+> ```
+> They also can't both run automatically in the same `takiline.sh` invocation — both scripts use a `#!/usr/bin/env python3` shebang, so PATH-merging both envs makes whichever is listed first steal the other's interpreter. PATH-merge `takiline` with **one** of the two per run; run the other by hand afterward:
+> ```bash
+> conda activate takiline-busco
+> busco -i <assembly.fasta> -o <name>_busco -l bacteria_odb10 -m genome \
+>   -c <threads> --out_path <run_dir>/reports/busco/
+> ```
+>
+> **abricate/mlst live in `environment-typing.yml`**, not `environment.yml` — both pull in perl-bioperl, which forces `samtools` down to a version too old for Pilon's `-@`/`-o` flags.
 
 ---
 
 ## Installation
 
 ```bash
-# Clone or download the script
 git clone https://github.com/cruzolino/TakiLine---Bacterial-Genome-Assembly-Pipeline
 chmod +x takiline.sh
 
-# Create the pinned environment (exact tested versions, not "whatever's newest today")
 conda env create -f environment.yml
 conda activate takiline
 ```
 
-`environment.yml` covers everything except `-a trycycler` mode and Nanopore polishing — those need `environment-medaka.yml` and `environment-trycycler.yml` (see below). Versions are pinned to what's already proven to run together on this machine, not just "current bioconda release" — each file's header documents its own provenance.
+`environment.yml` covers everything except `-a trycycler` mode, Nanopore polishing, and `--abricate`/`--mlst` — those need `environment-medaka.yml`, `environment-trycycler.yml`, and `environment-typing.yml` respectively. kraken2/skesa/checkm2/BUSCO aren't in any file — see the notes above.
 
-> **Why pinned, not bare package names?** An unpinned `conda create` resolves to whatever's newest *the moment you run it* — the same command can silently give different tool versions months apart. A pinned file is a reviewable record of exactly which versions produced a given result; it does not give Docker-level OS isolation (see [Key design decisions](#key-design-decisions) for why that's skipped here).
+> **Pinned, not bare package names:** an unpinned `conda create` resolves to whatever's newest at that moment, so the same command can give different versions months apart. A pinned file is a reviewable record of exactly what produced a given result.
 
-> ### ⚑ `-a trycycler` needs a second environment, and it isn't proven to work yet
-> TakiLine's `-a trycycler` path needs `trycycler`, `flye`, `minimap2`, `miniasm`, `minipolish`, and `raven` all on `$PATH` in one run. On this machine, `trycycler`/`minipolish` only ever existed in their own env (Python 3.13, numpy 2.5.x) — never alongside the rest (Python 3.12, numpy 1.26.x). That numpy 1.x-vs-2.x split is a classic bioconda solver-conflict signature. `environment-trycycler.yml` bundles both sides as a best-effort pin, but the combined solve hasn't actually been tested — treat it as a starting point, not a known-good environment.
+> ### `-a trycycler` needs a second environment
+> `-a trycycler` requires `trycycler`, `flye`, `minimap2`, `miniasm`, `minipolish`, and `raven` all on `$PATH` at once — `environment-trycycler.yml` covers this.
 
-Prefer managing versions yourself? The per-tool `conda install -c bioconda <name>` commands are still listed in [Requirements](#requirements) above.
+Prefer managing versions yourself? Per-tool `conda install -c bioconda <name>` commands are in [Requirements](#requirements) above.
 
 ---
 
 ## Quick Start
 
-> Every run below needs a species — either `-S "Genus species"` if you already know it (recommended), or a Kraken2 database via `-K`/`$KRAKEN2_DB_PATH` so the pipeline can auto-detect it. See [Species identification](#species-identification).
+> Every run needs a species — `-S "Genus species"` if known (recommended), or a Kraken2 database via `-K`/`$KRAKEN2_DB_PATH` for auto-detection. See [Species identification](#species-identification).
 
 ```bash
 # Illumina paired-end, species known
@@ -211,17 +226,15 @@ Optional typing/resistance analyses (off by default):
 | Illumina PE only | `spades` | `--isolate` mode; best for single isolates |
 | Illumina PE only | `skesa` | Faster than SPAdes; fewer mis-assemblies on some datasets |
 | Illumina + Nanopore | `unicycler` | Closes chromosomal and plasmid gaps using long reads |
-| Nanopore (R10, standard) | `flye` | Robust for R9/R10 chemistry; auto-selects `--nano-hq` or `--nano-raw` |
+| Nanopore (R10, standard) | `flye` | Robust for R9/R10; auto-selects `--nano-hq`/`--nano-raw` |
 | Nanopore (legacy R9.4) | `raven` | Lightweight alternative to Flye |
-| Nanopore (deep coverage) | `canu` | Higher accuracy at the cost of longer runtime |
-| Nanopore (≥100x, reliability-critical) | `trycycler` | Cross-validates 12 subsample assemblies to catch single-assembler misassembly. ~6-7x slower than `flye` for only marginal accuracy gain on well-behaved data — use it for the safety net, not for speed |
-| PacBio HiFi | `flye --hifi` | `--pacbio-hifi` mode; produces near-perfect assemblies |
+| Nanopore (deep coverage) | `canu` | Higher accuracy, longer runtime |
+| Nanopore (≥100x, reliability-critical) | `trycycler` | Cross-validates 12 subsample assemblies; ~6-7x slower than `flye` for marginal accuracy gain on well-behaved data |
+| PacBio HiFi | `flye --hifi` | `--pacbio-hifi` mode; near-perfect assemblies |
 
-> **Hybrid mode (`-1`/`-2` + `-l`):** only `-a unicycler` does true integrated hybrid assembly. `-a flye`/`canu`/`raven` assemble the long reads only, then Pilon-polish with Illumina — valid, but a different strategy. `-a spades`/`skesa` are rejected in hybrid mode rather than silently dropping `-l`.
+> **Hybrid mode (`-1`/`-2` + `-l`):** only `-a unicycler` does true integrated hybrid assembly. `-a flye`/`canu`/`raven` assemble long reads only, then Pilon-polish with Illumina. `-a spades`/`skesa` are rejected in hybrid mode.
 
 ### Genome size format
-
-Pass a number followed by `m` (megabases) or `g` (gigabases):
 
 ```
 -g 5m      # 5 Mb  (typical E. coli)
@@ -244,38 +257,31 @@ Input reads
     │
     ▼
 [2/5] Species Identification
-    ├── -S "Genus species" given → recorded as-is, Kraken2 skipped (recommended)
+    ├── -S "Genus species" given → recorded as-is, Kraken2 skipped
     └── -S not given → Kraken2 on reads (required; error if missing/no DB)
     │                  top species-level hit becomes the run's species;
-    │                  < 70% of classified reads on that hit → contamination warning
+    │                  < 70% classified reads on that hit → contamination warning
     │
     ▼
 [3/5] Assembly
     ├── Illumina/Hybrid: SPAdes | SKESA | Unicycler
     ├── Nanopore/HiFi:   Flye (auto-versioned) | Canu | Raven
-    │                    | Trycycler (12-subsample consensus: Flye/Miniasm+
-    │                      Minipolish/Raven rotated → cluster → auto-drop
-    │                      clusters that fail reconcile → MSA → consensus)
+    │                    | Trycycler (12-subsample consensus → cluster →
+    │                      auto-drop failed clusters → MSA → consensus)
     └── Contig filtering (default: ≥ 500 bp)
     │
     ▼
 [4/5] Polishing
     ├── Illumina/Hybrid: Bowtie2 mapping → Pilon SNP+indel correction
     ├── Nanopore:        Medaka consensus polishing (--bacteria model selection)
-    └── PacBio HiFi:     skipped (Flye/Canu/Raven/Trycycler perform internal polishing)
-    │                    assembly path persisted for downstream stages
+    └── PacBio HiFi:     skipped (assemblers' internal polishing suffices)
     │
     ▼
 [5/5] Quality Assessment
     ├── QUAST          — assembly statistics (N50, contig count, misassemblies)
     ├── CheckM2/CheckM — genome completeness and contamination
-    ├── BUSCO          — lineage-specific gene completeness (auto-selected via
-    │                    --auto-lineage-prok, or forced with -L)
-    └── Optional (off by default, one flag each):
-                         --plasmid  → PlasmidFinder (replicon typing)
-                         --amr      → AMRFinderPlus (AMR genes + point mutations)
-                         --abricate → abricate, db=card (2nd AMR opinion)
-                         --mlst     → mlst (sequence typing)
+    ├── BUSCO          — lineage-specific gene completeness
+    └── Optional (one flag each): --plasmid --amr --abricate --mlst
     │
     ▼
 Final Report (SUMMARY.md + SUMMARY.html)
@@ -283,41 +289,41 @@ Final Report (SUMMARY.md + SUMMARY.html)
 
 ### Species identification
 
-TakiLine wants to know the isolate's species before assembling it, to catch an unidentified or mislabeled sample rather than silently assemble through it.
+TakiLine confirms the isolate's species before assembling, to catch a mislabeled sample rather than silently assemble through it.
 
-- **Recommended: inform it** with `-S "Genus species"` — more accurate than auto-detection, and skips Kraken2 entirely.
-- **Otherwise Kraken2 runs automatically** on the read set and becomes the species of record (recorded in `SUMMARY.md` and `logs/.species`), taking the species-level hit with the highest percentage of classified reads.
-- **Kraken2 is conditionally required, not skippable**: no `-S` and no working Kraken2 (missing binary, or `-K`/`$KRAKEN2_DB_PATH` not resolving to a database) is a hard error at preflight, same as a missing mandatory tool.
-- **Low-confidence calls warn, not abort**: under 70% of classified reads on the top hit logs a possible-contamination warning and points at the Kraken2 report, but the run continues.
-- **On resume**, the species is restored from `logs/.species` without re-running Kraken2; a different `-S` on resume is caught by the resume-fingerprint check.
+- **Recommended:** `-S "Genus species"` — more accurate, skips Kraken2.
+- **Otherwise Kraken2 runs automatically**, and the species-level hit with the highest read share becomes the species of record (`SUMMARY.md`, `logs/.species`).
+- **Kraken2 is conditionally required**: no `-S` and no working Kraken2 (missing binary or DB) is a hard error at preflight.
+- **Low-confidence calls warn, not abort**: under 70% on the top hit logs a contamination warning but the run continues.
+- **On resume**, species is restored from `logs/.species`; a different `-S` on resume is caught by the fingerprint check.
 
 ### Key design decisions
 
-**Pinned conda environments over Docker** — TakiLine is deliberately single-run and local-only; containerization mainly pays off across *different* environments (laptop, cluster, someone else's machine), none of which apply here, and conda already gives adequate isolation for one local user. nf-core-style pipelines get per-process containers nearly free because Nextflow dispatches each tool to its own container automatically — a bash script has no such dispatch, so bolting on one giant image would just inherit TakiLine's real cross-tool dependency conflicts (see the Trycycler callout in [Installation](#installation)) directly. Pinned `environment.yml` files are the right-sized fix for the actual risk (drift over time), revisited if multi-machine use, publishing, or a Nextflow move ever happens.
+**Pinned conda over Docker** — TakiLine is single-run and local; conda gives adequate isolation for that. Containerization would mostly add overhead without solving the real risk (version drift over time), which the pinned `environment.yml` files already handle.
 
-**Parallel QC** — FastQC on raw reads and NanoPlot are launched in the background while `fastp`/`filtlong` run in the foreground. This saves 30–120 s on typical datasets with no additional resource contention.
+**Parallel QC** — FastQC/NanoPlot run in the background while `fastp`/`filtlong` run in the foreground, saving ~30–120 s with no added resource contention.
 
-**Flye version auto-detection** — the pipeline queries `flye --version` at runtime and selects `--nano-hq` (Flye ≥ 2.9) or `--nano-raw` (Flye ≤ 2.8) automatically, with a warning prompting the user to upgrade if an older version is detected.
+**Flye version auto-detection** — queries `flye --version` and selects `--nano-hq` (≥ 2.9) or `--nano-raw` (≤ 2.8), warning if outdated.
 
-**Platform-aware long-read QC** — Filtlong applies `--min_mean_q 7` for Nanopore reads and `--min_mean_q 20` for PacBio HiFi reads, reflecting the distinct quality score distributions of each platform.
+**Platform-aware long-read QC** — Filtlong uses `--min_mean_q 7` for Nanopore and `--min_mean_q 20` for HiFi, matching each platform's quality distribution.
 
-**Medaka polishing for Nanopore** — Flye/Canu/Raven/Trycycler's internal consensus still leaves ONT-specific indel error; a Medaka pass measurably improves gene completeness. `--bacteria` auto-model needs basecaller metadata in the read headers (absent from most SRA/ENA data) — use `-M` when auto-detection fails. Skipped for HiFi, whose consensus is already near-perfect.
+**Medaka polishing for Nanopore** — assemblers' internal consensus still leaves ONT-specific indel error; Medaka measurably improves gene completeness. `--bacteria` auto-model needs basecaller metadata in read headers (often absent from SRA/ENA data) — use `-M` if auto-detection fails. Skipped for HiFi.
 
-**BUSCO auto-lineage** — defaults to `--auto-lineage-prok` instead of generic `bacteria_odb10`, placing the assembly against prokaryote marker trees for a tighter completeness score (e.g. `enterobacterales_odb10` for *E. coli*). `-L <lineage_odb10>` forces an exact lineage; a failed auto-placement retries once with `bacteria_odb10` and warns rather than aborting.
+**BUSCO auto-lineage** — defaults to `--auto-lineage-prok` for a tighter completeness score than generic `bacteria_odb10`. `-L` forces an exact lineage; a failed auto-placement retries once with `bacteria_odb10`.
 
-**Trycycler auto-pruning** — the pipeline runs non-interactively, so a cluster that fails reconcile has the offending contig dropped and reconcile retried automatically, instead of waiting for the manual review Trycycler's docs expect.
+**Trycycler auto-pruning** — runs non-interactively: a cluster that fails reconcile has the offending contig dropped and reconcile retried automatically, instead of waiting for manual review.
 
-**Pilon memory guard** — the pipeline checks available RAM before running Pilon and warns if the `-m` limit exceeds free memory, rather than silently crashing mid-run.
+**Pilon memory guard** — checks available RAM before running Pilon and warns if `-m` exceeds free memory, rather than crashing mid-run.
 
-**Typing/resistance analyses are opt-in, not opt-out** — PlasmidFinder, AMRFinderPlus, abricate, and mlst answer "what is this isolate," not "is this assembly any good" (QUAST/CheckM2/BUSCO's job, which stay on by default). All four require an explicit flag, and once passed, that tool joins the mandatory-tool preflight check — missing it is a hard error at startup, not a warning after a multi-hour assembly. CheckM2/BUSCO stay best-effort regardless, since they aren't flag-gated at all. See [Optional typing/resistance analyses](#optional-typingresistance-analyses-off-by-default) for the `--abricate` database choice.
+**Typing/resistance analyses are opt-in** — PlasmidFinder, AMRFinderPlus, abricate, mlst answer "what is this isolate," not assembly quality (QUAST/CheckM2/BUSCO's job, on by default). Once a flag is passed, that tool becomes a mandatory-tool preflight check.
 
-**Annotation is out of scope** — keeping assembly and annotation separate allows each step to be run, updated, or repeated independently. See [Suggested Next Steps](#suggested-next-steps) for recommended tools.
+**Annotation is out of scope** — keeping assembly and annotation separate lets each step be run, updated, or repeated independently. See [Suggested Next Steps](#suggested-next-steps).
 
 ---
 
 ## Output Structure
 
-By default, once the full pipeline (not `-q`) completes, heavy intermediates are cleaned up automatically — `00_raw_data/`, the trimmed/filtered FASTQs, and the whole `02_assembly/`/`03_polishing/` working directories are removed, leaving only the reports, logs, and the final assembly:
+By default, once the full pipeline (not `-q`) completes, heavy intermediates are cleaned up automatically — `00_raw_data/`, trimmed/filtered FASTQs, and the `02_assembly/`/`03_polishing/` working directories are removed, leaving reports, logs, and the final assembly:
 
 ```
 takiline/
@@ -352,15 +358,15 @@ takiline/
     └── quast.log
 ```
 
-Pass **`-k`** to keep intermediates instead (raw-data symlinks, trimmed/filtered FASTQs, `02_assembly/{assembler}/` working directories, `03_polishing/` BAMs) — useful for debugging an assembly. With `-k`, the final assembly stays at its normal per-assembler path (e.g. `02_assembly/{assembler}/contigs_filtered.fasta`, or `03_polishing/{sample}_pilon.fasta` for Illumina/hybrid) instead of being moved to `{input}.fasta`.
+Pass **`-k`** to keep intermediates instead (raw-data symlinks, trimmed/filtered FASTQs, `02_assembly/{assembler}/`, `03_polishing/` BAMs) — useful for debugging. With `-k`, the final assembly stays at its per-assembler path (e.g. `02_assembly/{assembler}/contigs_filtered.fasta`, or `03_polishing/{sample}_pilon.fasta` for Illumina/hybrid) instead of being moved to `{input}.fasta`.
 
-The **final assembly FASTA** path is printed at completion and recorded in `reports/SUMMARY.md`/`SUMMARY.html`.
+The final assembly FASTA path is printed at completion and recorded in `reports/SUMMARY.md`/`SUMMARY.html`.
 
 ---
 
 ## Resume Mode
 
-If the pipeline is interrupted (node failure, timeout, manual kill), re-run the exact same command with `-r` appended:
+If interrupted (node failure, timeout, manual kill), re-run the exact same command with `-r` appended:
 
 ```bash
 # Original command
@@ -370,7 +376,7 @@ If the pipeline is interrupted (node failure, timeout, manual kill), re-run the 
 ./takiline.sh -1 R1.fq.gz -2 R2.fq.gz -s Ecoli -t 16 -r
 ```
 
-Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on successful completion. With `-r`, any stage whose sentinel exists is skipped entirely. To force a specific stage to re-run, delete its sentinel then resume:
+Each stage writes a sentinel file (e.g. `logs/.done_assembly`) on success. With `-r`, any stage whose sentinel exists is skipped. To force a stage to re-run, delete its sentinel then resume:
 
 ```bash
 # Force re-assembly only, keep QC results
@@ -382,15 +388,12 @@ rm takiline/logs/.done_assembly
 
 ## Suggested Next Steps
 
-After the pipeline completes, the final polished assembly FASTA is ready for:
-
 | Task | Tool |
 |---|---|
 | Gene annotation | [Bakta](https://github.com/oschwengers/bakta) (INSDC-ready GFF3/GBFF) |
-| AMR gene detection | Built into TakiLine via `--amr`/`--abricate` — see [Optional typing/resistance analyses](#optional-typingresistance-analyses-off-by-default) |
+| AMR gene detection | Built into TakiLine via `--amr`/`--abricate` |
 | MLST typing | Built into TakiLine via `--mlst` ([mlst](https://github.com/tseemann/mlst), Torsten Seemann) |
 | Plasmid replicon typing | Built into TakiLine via `--plasmid` ([PlasmidFinder](https://cge.food.dtu.dk/services/PlasmidFinder/)) |
-| NCBI submission | Bakta outputs + `table2asn` |
 | Phylogenetics | [IQ-TREE2](http://www.iqtree.org/) or [FastTree](http://www.microbesonline.org/fasttree/) |
 | Pan-genome | [Panaroo](https://github.com/gtonkinhill/panaroo) (preferred) or [Roary](https://sanger-pathogens.github.io/Roary/) |
 | Secondary metabolites | [antiSMASH](https://antismash.secondarymetabolites.org/) |
