@@ -1,0 +1,18 @@
+# TakiLine — Trycycler assembly (`-a trycycler`) env
+#
+# Separate env because run_assembly()'s trycycler case calls trycycler,
+# flye, minimap2, miniasm, minipolish, and raven all in one invocation, so
+# all six need to be on $PATH at once.
+#
+# To create: conda env create -f environment-trycycler.yml
+name: takiline-trycycler
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - trycycler=0.5.6
+  - minipolish=0.2.1
+  - flye=2.9.6
+  - raven-assembler=1.8.3
+  - miniasm=0.3
+  - minimap2=2.31

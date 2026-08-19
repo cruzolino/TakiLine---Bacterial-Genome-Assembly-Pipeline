@@ -1,0 +1,55 @@
+# TakiLine — pinned conda environment (core)
+#
+# Covers: Illumina/hybrid/PacBio-HiFi assembly, QC, polishing, and
+# --plasmid/--amr typing. Excludes medaka/trycycler (own env each — see
+# environment-medaka.yml, environment-trycycler.yml) and abricate/mlst
+# (environment-typing.yml — conflicts with samtools here).
+#
+# samtools=1.24 is required, not cosmetic: Pilon polishing calls
+# `samtools sort -@ N -o file.bam`, which samtools <1.0 doesn't support.
+#
+# Not included: kraken2, skesa (install cleanly into this env if needed),
+# checkm2, busco (need their own env each — conflict with samtools=1.24;
+# can't run both at once alongside this env either — see README).
+#
+# To (re)create: conda env create -f environment.yml
+name: takiline
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  # Mandatory (all modes)
+  - fastqc=0.12.1
+  - fastp=1.3.6
+  - quast=5.3.0
+
+  # Illumina / Hybrid
+  - bowtie2=2.5.5
+  - samtools=1.24
+  - pilon=1.24
+
+  # Long-read / Hybrid (filtering only — medaka is in environment-medaka.yml)
+  - filtlong=0.3.1
+
+  # Assemblers (all except trycycler, which needs its own env)
+  - spades=4.3.0
+  - unicycler=0.5.1
+  - flye=2.9.6
+  - canu=2.2
+  - raven-assembler=1.8.3
+  - miniasm=0.3
+  - minimap2=2.31
+
+  # QC / completeness
+  - nanoplot=1.47.1
+  - seqkit=2.13.0
+  - assembly-stats=1.0.1
+  - pigz=2.8
+
+  # Optional typing/resistance analyses (--plasmid/--amr)
+  - plasmidfinder=2.1.6
+  - ncbi-amrfinderplus=4.2.7
+
+  - pip
+  - pip:
+    - multiqc==1.35

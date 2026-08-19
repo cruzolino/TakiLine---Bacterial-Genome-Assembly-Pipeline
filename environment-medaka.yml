@@ -1,0 +1,15 @@
+# TakiLine — Medaka polishing (separate env)
+#
+# Kept separate: medaka's dependencies commonly conflict with the assembler
+# stack. Runs after assembly as its own process, so it doesn't need to
+# share $PATH with the assemblers.
+#
+# Usage: `conda run -n takiline-medaka medaka_consensus ...`
+#
+# To create: conda env create -f environment-medaka.yml
+name: takiline-medaka
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - medaka=2.2.2

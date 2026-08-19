@@ -1,0 +1,14 @@
+# TakiLine — abricate/mlst (`--abricate`/`--mlst`) env
+#
+# Separate env: both depend on perl-bioperl, which forces samtools down to
+# an old version — that breaks Pilon polishing in environment.yml's core
+# env. Only needed when using --abricate/--mlst.
+#
+# To create: conda env create -f environment-typing.yml
+name: takiline-typing
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - abricate=1.4.0
+  - mlst=2.35.0
