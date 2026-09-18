@@ -15,6 +15,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 - [Quick Start](#quick-start)
 - [Usage](#usage)
 - [Pipeline Overview](#pipeline-overview)
+- [Final Report](#final-report)
 - [Output Structure](#output-structure)
 - [Resume Mode](#resume-mode)
 - [Suggested Next Steps](#suggested-next-steps)
@@ -35,7 +36,7 @@ A streamlined bash pipeline for *de novo* bacterial genome assembly from Illumin
 - Optional typing/resistance analyses, off by default: PlasmidFinder (`--plasmid`), AMRFinderPlus (`--amr`), abricate (`--abricate`), mlst (`--mlst`)
 - Illumina/hybrid polishing: Polypolish (default) or legacy Pilon (`--pilon`)
 - Genome completeness via CheckM2/CheckM and BUSCO
-- Summary report at completion, as Markdown and standalone HTML
+- Summary report at completion, as Markdown and standalone HTML — read QC, assembly QC (QUAST/BUSCO/CheckM2/Kraken2) with pass/fail flags, an overall verdict banner, and two inline charts — see [Final Report](#final-report)
 - All missing tools reported at startup in one error (Kraken2 is checked separately, with a message tailored to why it's needed)
 
 ---
@@ -298,6 +299,8 @@ Input reads
     │
     ▼
 Final Report (SUMMARY.md + SUMMARY.html)
+    ├── Read QC, Assembly QC (QUAST/BUSCO/CheckM2/Kraken2), overall verdict banner
+    └── BUSCO completeness + contig length distribution charts (HTML only)
 ```
 
 ### Species identification
@@ -311,6 +314,20 @@ TakiLine confirms the isolate's species before assembling, to catch a mislabeled
 - **`--verify-species`** (off by default) turns that cross-check on: Kraken2 runs even though `-S` was given, and its top species-level call is compared against `-S`. A disagreement is a hard error — the run stops, naming both calls, and asks you to confirm the sample is correctly identified or drop `--verify-species` to trust `-S` as before. Needs `-K <db_dir>`/`$KRAKEN2_DB_PATH`, same as auto-detection.
 - **Low-confidence calls warn, not abort**: under 70% on the top hit logs a contamination warning but the run continues (applies whether Kraken2 is auto-detecting or verifying).
 - **On resume**, species is restored from `logs/.species`; a different `-S` on resume is caught by the fingerprint check.
+
+---
+
+## Final Report
+
+`reports/SUMMARY.md` and `reports/SUMMARY.html` are built from the same values, so they can't drift — every field that isn't available (a tool didn't run, or its output didn't parse) shows as `N/A` rather than breaking the report.
+
+- **Overall verdict banner**, right under the title: `✅ PASS` if nothing below is flagged, otherwise `⚠️ Review recommended` naming which metric to check.
+- **Read QC**: fastp numbers for Illumina (reads/bases before and after filtering, Q20/Q30 rate) and/or NanoPlot's for long reads (read count, mean length/quality, N50), plus an estimated input coverage (bases fed to the assembler ÷ `-g` genome size) — **flagged under 20x** for Illumina/hybrid, **under 25x** for long-only (Trycycler's own floor).
+- **Assembly QC**: GC%, predicted/rRNA gene counts from QUAST; lineage and completeness breakdown from BUSCO; completeness/contamination from CheckM2 (or legacy CheckM); Kraken2's top-species read share. Flagged the same way the pipeline itself warns at runtime: **BUSCO completeness under 95%**, **CheckM2 completeness under 90%**, **CheckM2 contamination over 5%**, **Kraken2 top-species under 70%**.
+- **Unpolished long-read caveat**: if Medaka didn't produce a consensus on a long-only ONT run, the report says so next to the BUSCO/CheckM2 rows, since a raw assembly's completeness/contamination numbers reflect that, not necessarily a bad genome.
+- **Kraken2 confidence note**: on long-only runs with under 5000 classified long reads, the top-species row is marked low confidence — the percentage gets noisy at that depth.
+- **Charts (HTML only)**: a BUSCO completeness stacked bar and a contig length distribution bar, both inline SVG — no JS, no external assets, so the file stays viewable offline as a single page.
+- **Logo**: embedded from `logo.png` next to `takiline.sh`, base64-inlined into the HTML for the same reason. Missing the file just omits the logo — it isn't a hard requirement.
 
 ---
 
